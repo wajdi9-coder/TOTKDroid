@@ -894,17 +894,23 @@ void plat_render_thread_pin(void) {
         if (mhz[c] > best) best = mhz[c];
         n = c + 1;
     }
+    // The cores within LARECOMP_RENDER_BIG_PCT percent (default 90) of the top clock, not only those at exactly the top
+    // clock: a Dimensity 8300 has one core at 3350 MHz and three at 3200, and pinning the render thread to the single
+    // top core alone left it sharing that core with the game's main thread (POCO X6 Pro, Mali-G615).
+    long pct = getenv("LARECOMP_RENDER_BIG_PCT") ? atol(getenv("LARECOMP_RENDER_BIG_PCT")) : 90;
+    if (pct < 1 || pct > 100) pct = 90;
     cpu_set_t set;
     CPU_ZERO(&set);
     int k = 0;
     for (int c = 0; c < n; c++)
-        if (mhz[c] == best) {
+        if (mhz[c] > 0 && mhz[c] * 100 >= best * pct) {
             CPU_SET(c, &set);
             k++;
         }
     if (!best || k == 0 || k == n) return;
     int r = sched_setaffinity(0, sizeof set, &set);
-    LOG("[android] render thread on the %d fastest cores (%ld MHz): %s\n", k, best / 1000, r ? strerror(errno) : "ok");
+    LOG("[android] render thread on the %d fastest cores (>= %ld MHz of %ld): %s\n", k, best * pct / 100000, best / 1000,
+        r ? strerror(errno) : "ok");
 }
 
 void plat_thread_unpin(void) {
