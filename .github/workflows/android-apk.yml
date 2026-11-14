@@ -1,1 +1,69 @@
+# Builds the TOTKDroid APK on GitHub (Ubuntu): the dependencies (SDL3, shaderc, FFmpeg) from android/deps, then Gradle.
+# Run it from Actions > Android APK > Run workflow. The APK comes out under "Artifacts".
+name: Android APK
 
+on:
+  workflow_dispatch:
+    inputs:
+      id_suffix:
+        description: "App id suffix. '.fps' installs next to the original app; empty replaces it (needs the same signing key)"
+        default: ".fps"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      NDK_VER: "30.0.16248370"
+      CMAKE_VER: "3.30.4"
+    steps:
+      - uses: actions/checkout@v4
+
+      # The zip of a repository has no submodule contents: libadrenotools (with its own submodules) is cloned here
+      - name: libadrenotools
+        run: |
+          rm -rf third_party/libadrenotools
+          git clone --recursive --depth 1 https://github.com/bylaws/libadrenotools third_party/libadrenotools
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK packages
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-36" "ndk;$NDK_VER" "cmake;$CMAKE_VER"
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            android/deps/out
+            android/deps/ffmpeg
+          key: android-deps-${{ hashFiles('android/deps/*.sh', 'android/deps/*.patch') }}
+
+      - name: SDL3, shaderc, headers, font
+        run: bash android/deps/build_deps.sh
+
+      - name: FFmpeg
+        run: |
+          [ -f android/deps/ffmpeg/lib/libswresample.so ] || \
+            ANDROID_NDK_LINUX="$ANDROID_HOME/ndk/$NDK_VER" bash android/deps/build_ffmpeg.sh
+
+      - name: Build the APK
+        working-directory: android/totkrecompandroid
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon "-PtotkIdSuffix=${{ inputs.id_suffix }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TOTKDroid-apk
+          path: android/totkrecompandroid/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
