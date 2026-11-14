@@ -21,7 +21,9 @@ android {
     ndkVersion = "30.0.16248370"
 
     defaultConfig {
-        applicationId = "com.totkrecompandroid"
+        // -PtotkIdSuffix=.fps installs next to the original app (another signing key can't update it, and uninstalling it
+        // would delete its game files); empty (default): the original id
+        applicationId = "com.totkrecompandroid" + (providers.gradleProperty("totkIdSuffix").getOrElse(""))
         minSdk = 30
         targetSdk = 36
         versionCode = 6
